@@ -1,21 +1,35 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, current_app, request, jsonify
 import os
 import uuid
 from datetime import datetime
 from app.config import Config
 from app.data_processing.file_parser import parse_file
-from app.services.rag_service import build_file_vector_store
+from app.services.rag_service import build_file_vector_store, delete_file_vector_store
 
 bp = Blueprint('upload', __name__)
 
 # 存储上传的文件信息
 uploaded_files = {}
 
+
+def remove_file_records(file_ids):
+    """按 file_id 批量删除内存中的文件记录。"""
+    for file_id in file_ids:
+        uploaded_files.pop(file_id, None)
+
 # 检查文件扩展名是否允许
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in Config.ALLOWED_EXTENSIONS
+    if not filename:
+        return False
+    normalized = filename.strip().rstrip('.')
+    return '.' in normalized and normalized.rsplit('.', 1)[1].lower() in Config.ALLOWED_EXTENSIONS
 
-import traceback
+
+def is_office_temp_lock(filename):
+    """识别 Office 临时锁文件（通常形如 ~$xxx.docx）。"""
+    if not filename:
+        return False
+    return os.path.basename(filename).strip().startswith('~$')
 
 @bp.route('', methods=['POST'])
 def upload_file():
@@ -28,10 +42,37 @@ def upload_file():
         if file.filename == '':
             return jsonify({'success': False, 'message': 'No selected file'})
         
-        if file and allowed_file(file.filename):
+        raw_name = (file.filename or '').strip()
+        normalized_name = os.path.basename(raw_name)
+        ext = normalized_name.rsplit('.', 1)[1].lower() if '.' in normalized_name else 'none'
+
+        current_app.logger.info(
+            'upload received: raw_name="%s", normalized_name="%s", ext="%s", content_type="%s", content_length=%s',
+            raw_name,
+            normalized_name,
+            ext,
+            getattr(file, 'content_type', ''),
+            request.content_length,
+        )
+
+        if is_office_temp_lock(raw_name):
+            current_app.logger.warning('upload rejected: office temp lock file, name="%s"', normalized_name)
+            return jsonify({
+                'success': False,
+                'message': '检测到 Office 临时锁文件（~$ 开头），请关闭文档后上传原始 .docx 文件。'
+            })
+
+        if raw_name.lower().endswith('.doc'):
+            current_app.logger.warning('upload rejected: legacy doc not supported, name="%s"', normalized_name)
+            return jsonify({
+                'success': False,
+                'message': 'Legacy .doc is not supported yet. Please convert it to .docx and retry.'
+            })
+
+        if file and allowed_file(raw_name):
             # 生成唯一文件名
             file_id = str(uuid.uuid4())
-            filename = f"{file_id}_{file.filename}"
+            filename = f"{file_id}_{raw_name}"
             
             # 使用 os.path.normpath 规范化路径，避免 Windows 下路径问题
             upload_folder = os.path.normpath(Config.UPLOAD_FOLDER)
@@ -42,23 +83,35 @@ def upload_file():
                 os.makedirs(upload_folder)
                 
             file.save(filepath)
+            saved_size = os.path.getsize(filepath)
             
             # 存储文件信息
             uploaded_files[file_id] = {
                 'id': file_id,
-                'name': file.filename,
+                'name': raw_name,
                 'path': filepath,
                 'upload_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'status': 'uploaded'
             }
+
+            current_app.logger.info(
+                'upload saved: file_id="%s", name="%s", ext="%s", path="%s", size=%s',
+                file_id,
+                normalized_name,
+                ext,
+                filepath,
+                saved_size,
+            )
             
             return jsonify({'success': True, 'fileId': file_id, 'message': 'File uploaded successfully'})
         else:
-            return jsonify({'success': False, 'message': 'File type not allowed'})
+            allow = ', '.join(sorted(Config.ALLOWED_EXTENSIONS))
+            msg = f'不支持的文件类型: .{ext}，允许类型: {allow}'
+            current_app.logger.warning('upload rejected: %s, name="%s"', msg, normalized_name)
+            return jsonify({'success': False, 'message': msg})
             
     except Exception as e:
-        print(f"Error uploading file: {str(e)}")
-        traceback.print_exc()
+        current_app.logger.exception("upload failed: %s", str(e))
         return jsonify({'success': False, 'message': f'Server Error: {str(e)}'}), 500
 
 @bp.route('/parse', methods=['POST'])
@@ -82,7 +135,7 @@ def parse_uploaded_file():
             return jsonify({'success': False, 'message': 'File too large (max 100MB)'})
         
         # 解析文件
-        print(f"开始解析文件: {file_info['path']}")
+        current_app.logger.info("开始解析文件: %s", file_info['path'])
         parse_result = parse_file(file_info['path'])
         file_info['parse_result'] = parse_result
         file_info['status'] = 'parsed'
@@ -100,9 +153,9 @@ def parse_uploaded_file():
             file_info['rag_ready'] = False
             vector_warning = f'Vector build skipped: {str(vector_err)}'
             file_info['rag_error'] = vector_warning
-            print(f"Vector build failed for {file_id}: {vector_warning}")
+            current_app.logger.warning("Vector build failed for %s: %s", file_id, vector_warning)
         
-        print(f"文件解析成功: {file_info['name']}")
+        current_app.logger.info("文件解析成功: %s", file_info['name'])
         return jsonify({
             'success': True,
             'message': 'File parsed successfully',
@@ -111,8 +164,7 @@ def parse_uploaded_file():
             'warning': vector_warning,
         })
     except Exception as e:
-        print(f"Error parsing file: {str(e)}")
-        traceback.print_exc()
+        current_app.logger.exception("Error parsing file: %s", str(e))
         # 提供更详细的错误信息
         error_msg = f'Parse error: {str(e)}'
         # 常见错误处理
@@ -143,12 +195,14 @@ def get_file_list():
     """获取文件列表"""
     files = []
     for file_id, file_info in uploaded_files.items():
+        file_path = file_info.get('path', '')
+        file_exists = bool(file_path) and os.path.exists(file_path)
         files.append({
             'id': file_id,
             'name': file_info['name'],
-            'size': os.path.getsize(file_info['path']) if 'path' in file_info else 0,
+            'size': os.path.getsize(file_path) if file_exists else 0,
             'uploadTime': file_info.get('upload_time', ''),
-            'status': file_info.get('status', 'uploaded')
+            'status': file_info.get('status', 'uploaded') if file_exists else 'expired'
         })
     return jsonify({'success': True, 'files': files})
 
@@ -161,6 +215,9 @@ def delete_file(file_id):
     file_info = uploaded_files[file_id]
     if 'path' in file_info and os.path.exists(file_info['path']):
         os.remove(file_info['path'])
+
+    # 同步清理该文件的向量索引目录，防止磁盘空间持续增长。
+    delete_file_vector_store(file_id)
     
     del uploaded_files[file_id]
     return jsonify({'success': True, 'message': 'File deleted successfully'})

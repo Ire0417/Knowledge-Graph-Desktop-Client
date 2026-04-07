@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>知识图谱桌面系统</title>
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1a24;
+      --bg-soft: #132131;
+      --card: #1a2b3f;
+      --card-strong: #1f334b;
+      --text: #eaf2ff;
+      --muted: #9eb0c9;
+      --accent: #ff7a45;
+      --accent-2: #3bd6c6;
+      --accent-3: #ffd166;
+      --danger: #ff5d6c;
+      --shadow: rgba(15, 25, 36, 0.45);
+      --radius: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Fira Sans", "Source Sans 3", "Noto Sans SC", "Segoe UI", sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at 15% 20%, #20344a 0%, var(--bg) 48%),
+        radial-gradient(circle at 75% 10%, #314660 0%, transparent 55%),
+        linear-gradient(120deg, #0d1925 0%, #121d2b 50%, #0f1723 100%);
+      min-height: 100vh;
+      display: flex;
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      width: 100%;
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      padding: 28px 20px;
+      background: linear-gradient(170deg, rgba(28, 41, 58, 0.95), rgba(15, 25, 36, 0.92));
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .brand h1 {
+      font-size: 22px;
+      margin: 0;
+      letter-spacing: 0.5px;
+    }
+
+    .brand span {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .nav {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .nav button {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid transparent;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+
+    .nav button.active {
+      background: linear-gradient(120deg, rgba(255, 122, 69, 0.25), rgba(59, 214, 198, 0.2));
+      border-color: rgba(255, 255, 255, 0.18);
+      box-shadow: 0 14px 28px rgba(0, 0, 0, 0.2);
+    }
+
+    .status {
+      margin-top: auto;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 14px;
+      border-radius: 14px;
+      font-size: 13px;
+      color: var(--muted);
+      display: grid;
+      gap: 6px;
+    }
+
+    .status strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    main {
+      padding: 30px 34px 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .header h2 {
+      margin: 0;
+      font-size: 26px;
+    }
+
+    .pill {
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      background: rgba(26, 43, 63, 0.9);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: 0 20px 35px var(--shadow);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .card h3 {
+      margin-top: 0;
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+
+    .card p {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .button {
+      border: none;
+      border-radius: 12px;
+      padding: 10px 16px;
+      cursor: pointer;
+      background: linear-gradient(120deg, var(--accent), var(--accent-3));
+      color: #1c1c1c;
+      font-weight: 600;
+      font-size: 14px;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .button.secondary {
+      background: rgba(255, 255, 255, 0.12);
+      color: var(--text);
+    }
+
+    .button.ghost {
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: var(--text);
+    }
+
+    .button:active {
+      transform: scale(0.98);
+    }
+
+    .form-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .file-upload {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 14px;
+      background: rgba(15, 26, 36, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      flex: 1;
+      min-width: 240px;
+    }
+
+    .file-upload input[type="file"] {
+      display: none;
+    }
+
+    .file-upload label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 12px;
+      background: linear-gradient(120deg, rgba(255, 122, 69, 0.25), rgba(59, 214, 198, 0.25));
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .file-upload span {
+      font-size: 12px;
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 280px;
+    }
+
+    input[type="text"], textarea, select {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(15, 26, 36, 0.6);
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    .file-list {
+      display: grid;
+      gap: 10px;
+      max-height: 220px;
+      overflow: auto;
+    }
+
+    .file-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 13px;
+    }
+
+    .file-item.active {
+      border-color: rgba(59, 214, 198, 0.6);
+      background: rgba(59, 214, 198, 0.12);
+    }
+
+    .badge {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.14);
+      color: var(--muted);
+    }
+
+    .page {
+      display: none;
+      animation: fadeUp 0.45s ease;
+    }
+
+    .page.active {
+      display: block;
+    }
+
+    .log {
+      background: rgba(15, 26, 36, 0.8);
+      border-radius: 14px;
+      padding: 12px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--muted);
+      max-height: 180px;
+      overflow: auto;
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+    }
+
+    .graph-canvas {
+      width: 100%;
+      height: 360px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: radial-gradient(circle at 20% 20%, rgba(59, 214, 198, 0.12), transparent 55%),
+        rgba(15, 26, 36, 0.85);
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin: 12px 0 8px;
+    }
+
+    .filter-group {
+      display: grid;
+      gap: 6px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 12px;
+    }
+
+    .filter-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .filter-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 4px 8px;
+      border-radius: 999px;
+    }
+
+    .tag {
+      font-size: 12px;
+      color: var(--accent-2);
+    }
+
+    .glow {
+      position: absolute;
+      right: -120px;
+      top: -120px;
+      width: 320px;
+      height: 320px;
+      background: radial-gradient(circle, rgba(255, 122, 69, 0.25), transparent 70%);
+      filter: blur(10px);
+      pointer-events: none;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 960px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: space-between;
+      }
+
+      .nav {
+        flex-direction: row;
+        flex-wrap: wrap;
+      }
+
+      main {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <h1>知识图谱桌面系统</h1>
+        <span></span>
+      </div>
+      <div class="nav" id="nav">
+        <button class="active" data-page="upload">上传文件</button>
+        <button data-page="extract">提取内容</button>
+        <button data-page="graph">构建图谱</button>
+        <button data-page="qa">知识问答</button>
+      </div>
+      <div class="status" id="statusPanel">
+        <div><strong>后端状态</strong> <span id="healthText">检测中...</span></div>
+        <div>当前文件: <span id="currentFile">未选择</span></div>
+        <div>文件状态: <span id="currentStatus">-</span></div>
+      </div>
+    </aside>
+
+    <main>
+      <div class="glow"></div>
+      <div class="header">
+        <h2 id="pageTitle">上传文件</h2>
+        <span class="pill" id="pageHint">基础流程：上传 -> 解析 -> 抽取 -> 图谱 -> 问答</span>
+      </div>
+
+      <section class="page active" id="page-upload">
+        <div class="grid">
+          <div class="card">
+            <h3>文件上传</h3>
+            <p>支持 PDF / DOCX / TXT / 图片 / 表格等格式，最大 100MB。</p>
+            <div class="form-row">
+              <div class="file-upload">
+                <input type="file" id="fileInput" />
+                <label for="fileInput">选择文件</label>
+                <span id="fileName">未选择文件</span>
+              </div>
+              <button class="button" id="uploadBtn">上传</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3>文件列表</h3>
+            <p>选择一个文件作为后续抽取和问答的目标。</p>
+            <div class="file-list" id="fileList"></div>
+            <div class="form-row" style="margin-top:12px;">
+              <button class="button secondary" id="refreshBtn">刷新列表</button>
+              <button class="button ghost" id="deleteBtn">删除选中</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-extract">
+        <div class="grid">
+          <div class="card">
+            <h3>解析与抽取</h3>
+            <p>先解析文件，再抽取实体与关系，为图谱构建做准备。</p>
+            <div class="form-row">
+              <button class="button" id="parseBtn">解析文件</button>
+              <button class="button secondary" id="extractBtn">抽取内容</button>
+            </div>
+            <div class="log" id="extractLog"></div>
+          </div>
+          <div class="card">
+            <h3>抽取结果预览</h3>
+            <p>查看抽取后的结构化结果。</p>
+            <textarea id="extractResult" placeholder="抽取结果将在这里展示..."></textarea>
+            <div class="form-row" style="margin-top:12px;">
+              <button class="button ghost" id="extractResultBtn">获取抽取结果</button>
+              <button class="button ghost" id="ocrPreviewBtn">查看 OCR 文本</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-graph">
+        <div class="grid">
+          <div class="card">
+            <h3>构建知识图谱</h3>
+            <p>基于抽取结果生成图谱，并提供对齐与优化操作。</p>
+            <div class="form-row">
+              <button class="button" id="buildGraphBtn">构建图谱</button>
+              <button class="button secondary" id="alignBtn">实体对齐</button>
+              <button class="button secondary" id="mergeBtn">关系合并</button>
+              <button class="button ghost" id="optimizeBtn">图谱优化</button>
+            </div>
+            <div class="log" id="graphLog"></div>
+          </div>
+          <div class="card">
+            <h3>图谱可视化</h3>
+            <p>自动渲染节点与关系，支持拖拽与缩放。</p>
+            <div class="toolbar">
+              <button class="button secondary" id="exportGraphBtn">导出 JSON</button>
+              <button class="button secondary" id="exportCsvBtn">导出 CSV</button>
+              <button class="button ghost" id="snapshotBtn">截图 PNG</button>
+              <button class="button ghost" id="resetFilterBtn">重置筛选</button>
+            </div>
+            <div class="grid" style="margin-bottom:12px;">
+              <div class="filter-group">
+                <strong>实体类型</strong>
+                <div class="filter-list" id="nodeFilter"></div>
+              </div>
+              <div class="filter-group">
+                <strong>关系类型</strong>
+                <div class="filter-list" id="edgeFilter"></div>
+              </div>
+            </div>
+            <div class="graph-canvas" id="graphCanvas"></div>
+          </div>
+          <div class="card">
+            <h3>图谱数据预览</h3>
+            <p>输出图谱节点与关系的简要结构。</p>
+            <textarea id="graphResult" placeholder="图谱数据将在这里展示..."></textarea>
+            <div class="form-row" style="margin-top:12px;">
+              <button class="button ghost" id="graphDataBtn">获取图谱数据</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-qa">
+        <div class="grid">
+          <div class="card">
+            <h3>智能问答</h3>
+            <p>基于解析/图谱数据进行检索与问答。</p>
+            <div class="form-row">
+              <input type="text" id="questionInput" placeholder="输入你的问题..." />
+              <button class="button" id="askBtn">提问</button>
+            </div>
+            <div class="log" id="qaLog"></div>
+          </div>
+          <div class="card">
+            <h3>答案与历史</h3>
+            <p>查看本文件的问答记录与推荐问题。</p>
+            <textarea id="qaResult" placeholder="回答将在这里展示..."></textarea>
+            <div class="form-row" style="margin-top:12px;">
+              <button class="button secondary" id="qaHistoryBtn">加载历史</button>
+              <button class="button ghost" id="qaRelatedBtn">推荐问题</button>
+              <button class="button ghost" id="qaHealthBtn">RAG 健康检查</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const state = {
+      files: [],
+      selectedFileId: null,
+      selectedFileName: "",
+      selectedFileStatus: "-",
+    };
+
+    let graphNetwork = null;
+    let graphDataCache = null;
+
+    const logTo = (id, message) => {
+      const el = document.getElementById(id);
+      const time = new Date().toLocaleTimeString();
+      el.textContent = `[${time}] ${message}\n` + el.textContent;
+    };
+
+    const setStatus = () => {
+      document.getElementById("currentFile").textContent = state.selectedFileName || "未选择";
+      document.getElementById("currentStatus").textContent = state.selectedFileStatus || "-";
+    };
+
+    const api = async (path, options = {}) => {
+      const response = await fetch(path, options);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.success === false) {
+        const msg = data.message || `请求失败: ${response.status}`;
+        throw new Error(msg);
+      }
+      return data;
+    };
+
+    const renderGraph = (graphData) => {
+      const container = document.getElementById("graphCanvas");
+      if (!container) return;
+      if (!graphData || !Array.isArray(graphData.nodes) || !graphData.nodes.length) {
+        container.innerHTML = "<div class=\"tag\" style=\"padding:12px;\">暂无图谱数据</div>";
+        return;
+      }
+      const activeNodeTypes = getSelectedFilters("node");
+      const activeEdgeTypes = getSelectedFilters("edge");
+
+      const nodes = graphData.nodes
+        .filter((node) => activeNodeTypes.has(node.type || "ENTITY"))
+        .map((node) => ({
+        id: node.id,
+        label: node.name || node.id,
+        group: node.type || "ENTITY",
+      }));
+      const nodeIds = new Set(nodes.map((n) => n.id));
+      const edges = (graphData.links || [])
+        .filter((edge) => activeEdgeTypes.has(edge.relationship || ""))
+        .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
+        .map((edge) => ({
+        from: edge.source,
+        to: edge.target,
+        label: edge.relationship || "",
+        arrows: "to",
+        font: { align: "middle" },
+      }));
+      const options = {
+        layout: { improvedLayout: true },
+        interaction: { hover: true, tooltipDelay: 120 },
+        physics: {
+          enabled: true,
+          solver: "forceAtlas2Based",
+          forceAtlas2Based: { gravitationalConstant: -40, springLength: 120 },
+          stabilization: { iterations: 120 },
+        },
+        nodes: {
+          shape: "dot",
+          size: 12,
+          font: { color: "#eaf2ff" },
+          borderWidth: 2,
+        },
+        edges: {
+          color: { color: "#6fa6ff", opacity: 0.7 },
+          width: 1.2,
+          smooth: true,
+        },
+        groups: {
+          ORG: { color: { background: "#ff7a45", border: "#ffb085" } },
+          PERSON: { color: { background: "#3bd6c6", border: "#7be8dd" } },
+          LOCATION: { color: { background: "#ffd166", border: "#ffe3a3" } },
+          ENTITY: { color: { background: "#6fa6ff", border: "#a1c3ff" } },
+          WORK: { color: { background: "#b17dff", border: "#d2b6ff" } },
+          TIME: { color: { background: "#ff5d6c", border: "#ff9aa4" } },
+        },
+      };
+      if (graphNetwork) {
+        graphNetwork.destroy();
+      }
+      graphNetwork = new vis.Network(container, { nodes, edges }, options);
+    };
+
+    const updateFilterOptions = (graphData) => {
+      const nodeFilter = document.getElementById("nodeFilter");
+      const edgeFilter = document.getElementById("edgeFilter");
+      nodeFilter.innerHTML = "";
+      edgeFilter.innerHTML = "";
+
+      const nodeTypes = Array.from(
+        new Set((graphData.nodes || []).map((node) => node.type || "ENTITY"))
+      );
+      const edgeTypes = Array.from(
+        new Set((graphData.links || []).map((edge) => edge.relationship || ""))
+      ).filter((t) => t);
+
+      nodeTypes.forEach((type) => nodeFilter.appendChild(buildFilterItem(type, "node")));
+      edgeTypes.forEach((type) => edgeFilter.appendChild(buildFilterItem(type, "edge")));
+    };
+
+    const buildFilterItem = (label, kind) => {
+      const wrapper = document.createElement("label");
+      wrapper.className = "filter-item";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = true;
+      checkbox.dataset.kind = kind;
+      checkbox.value = label;
+      checkbox.addEventListener("change", () => {
+        if (graphDataCache) {
+          renderGraph(graphDataCache);
+        }
+      });
+      const span = document.createElement("span");
+      span.textContent = label || "未命名";
+      wrapper.appendChild(checkbox);
+      wrapper.appendChild(span);
+      return wrapper;
+    };
+
+    const getSelectedFilters = (kind) => {
+      const items = document.querySelectorAll(`input[data-kind="${kind}"]`);
+      const selected = new Set();
+      items.forEach((item) => {
+        if (item.checked) {
+          selected.add(item.value);
+        }
+      });
+      if (!selected.size) {
+        items.forEach((item) => selected.add(item.value));
+      }
+      return selected;
+    };
+
+    const fetchGraphDataAndRender = async () => {
+      ensureSelectedFile();
+      const data = await api(`/graph/data/${state.selectedFileId}`);
+      graphDataCache = data.data || {};
+      updateFilterOptions(graphDataCache);
+      renderGraph(graphDataCache);
+      document.getElementById("graphResult").value = JSON.stringify(graphDataCache, null, 2);
+    };
+
+    const refreshFiles = async () => {
+      try {
+        const data = await api("/upload/files");
+        state.files = data.files || [];
+        renderFileList();
+      } catch (err) {
+        logTo("extractLog", `获取文件失败: ${err.message}`);
+      }
+    };
+
+    const renderFileList = () => {
+      const list = document.getElementById("fileList");
+      list.innerHTML = "";
+      state.files.forEach((file) => {
+        const item = document.createElement("div");
+        item.className = "file-item" + (file.id === state.selectedFileId ? " active" : "");
+        item.innerHTML = `
+          <div>
+            <div>${file.name}</div>
+            <div class="tag">${file.uploadTime || ""}</div>
+          </div>
+          <div>
+            <span class="badge">${file.status || "-"}</span>
+            <button class="button ghost" data-file="${file.id}">选择</button>
+          </div>
+        `;
+        item.querySelector("button").addEventListener("click", () => {
+          state.selectedFileId = file.id;
+          state.selectedFileName = file.name;
+          state.selectedFileStatus = file.status || "-";
+          setStatus();
+          renderFileList();
+        });
+        list.appendChild(item);
+      });
+      if (!state.files.length) {
+        list.innerHTML = `<div class="tag">暂无上传文件</div>`;
+      }
+    };
+
+    const ensureSelectedFile = () => {
+      if (!state.selectedFileId) {
+        throw new Error("请先选择文件");
+      }
+    };
+
+    document.getElementById("uploadBtn").addEventListener("click", async () => {
+      const file = document.getElementById("fileInput").files[0];
+      if (!file) {
+        logTo("extractLog", "请先选择文件");
+        return;
+      }
+      const form = new FormData();
+      form.append("file", file);
+      try {
+        const data = await api("/upload", { method: "POST", body: form });
+        logTo("extractLog", `上传成功: ${data.fileId || ""}`);
+        await refreshFiles();
+      } catch (err) {
+        logTo("extractLog", `上传失败: ${err.message}`);
+      }
+    });
+
+    document.getElementById("fileInput").addEventListener("change", (event) => {
+      const file = event.target.files[0];
+      const name = file ? file.name : "未选择文件";
+      document.getElementById("fileName").textContent = name;
+    });
+
+    document.getElementById("refreshBtn").addEventListener("click", refreshFiles);
+
+    document.getElementById("deleteBtn").addEventListener("click", async () => {
+      try {
+        ensureSelectedFile();
+        await api(`/upload/files/${state.selectedFileId}`, { method: "DELETE" });
+        logTo("extractLog", "文件已删除");
+        state.selectedFileId = null;
+        state.selectedFileName = "";
+        state.selectedFileStatus = "-";
+        setStatus();
+        await refreshFiles();
+      } catch (err) {
+        logTo("extractLog", `删除失败: ${err.message}`);
+      }
+    });
+
+    document.getElementById("parseBtn").addEventListener("click", async () => {
+      try {
+        ensureSelectedFile();
+        const data = await api("/upload/parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileId: state.selectedFileId }),
+        });
+        logTo("extractLog", `解析完成: chunk=${data.chunkCount || 0} rag=${data.ragReady}`);
+        await refreshFiles();
+      } catch (err) {
+        logTo("extractLog", `解析失败: ${err.message}`);
+      }
+    });
+
+    document.getElementById("extractBtn").addEventListener("click", async () => {
+      try {
+        ensureSelectedFile();
+        await api("/extract/", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileId: state.selectedFileId }),
+        });
+        logTo("extractLog", "抽取完成");
+        await refreshFiles();
+      } catch (err) {
+        logTo("extractLog", `抽取失败: ${err.message}`);
+      }
+    });
+
+    document.getElementById("extractResultBtn").addEventListener("click", async () => {
+      try {
+        ensureSelectedFile();
+        const data = await api(`/extract/result/${state.selectedFileId}`);
+        document.getElementById("extractResult").value = JSON.stringify(data.result || {}, null, 2);
+      } catch (err) {
+        logTo("extractLog", `获取抽取结果失败: ${err.message}`);
+      }
+    });
+
+    document.getElementById("ocrPreviewBtn").addEventListener("click", async () => {
+      try {
+        ensureSelectedFile();
+        const data = await api(`/extract/result/${state.selectedFileId}`);
+        const images = data.result && Array.isArray(data.result.image_texts) ? data.result.image_texts : [];
+        const preview = images.length ? images.join("\n\n---\n\n") : "未识别到 OCR 文本";
+        document.getElementById("extractResult").value = preview;
+      } catch (err) {
+        logTo("extractLog", `获取 OCR 文本失败: ${err.message}`);
+      }
+    });
+
+    document.getElementById("buildGraphBtn").addEventListener("click", async () => {
+      try {
+        ensureSelectedFile();
+        await api("/graph/build", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileId: state.selectedFileId }),
+        });
+        logTo("graphLog", "图谱构建完成");
+        await refreshFiles();
+        await fetchGraphDataAndRender();
+      } catch (err) {
+        logTo("graphLog", `构建失败: ${err.message}`);
+      }
+    });
+
+    document.getElementById("alignBtn").addEventListener("click", async () => {
+      try {
+        ensureSelectedFile();
+        await api("/graph/align", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileId: state.selectedFileId }),
+        });
+        logTo("graphLog", "实体对齐完成");
+        await fetchGraphDataAndRender();
+      } catch (err) {
+        logTo("graphLog", `实体对齐失败: ${err.message}`);
+      }
+    });
+
+    document.getElementById("mergeBtn").addEventListener("click", async () => {
+      try {
+        ensureSelectedFile();
+        await api("/graph/merge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileId: state.selectedFileId }),
+        });
+        logTo("graphLog", "关系合并完成");
+        await fetchGraphDataAndRender();
+      } catch (err) {
+        logTo("graphLog", `关系合并失败: ${err.message}`);
+      }
+    });
+
+    document.getElementById("optimizeBtn").addEventListener("click", async () => {
+      try {
+        ensureSelectedFile();
+        await api("/graph/optimize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileId: state.selectedFileId }),
+        });
+        logTo("graphLog", "图谱优化完成");
+        await fetchGraphDataAndRender();
+      } catch (err) {
+        logTo("graphLog", `图谱优化失败: ${err.message}`);
+      }
+    });
+
+    document.getElementById("graphDataBtn").addEventListener("click", async () => {
+      try {
+        await fetchGraphDataAndRender();
+      } catch (err) {
+        logTo("graphLog", `获取图谱数据失败: ${err.message}`);
+      }
+    });
+
+    document.getElementById("resetFilterBtn").addEventListener("click", () => {
+      document.querySelectorAll("#nodeFilter input, #edgeFilter input").forEach((item) => {
+        item.checked = true;
+      });
+      if (graphDataCache) {
+        renderGraph(graphDataCache);
+      }
+    });
+
+    document.getElementById("exportGraphBtn").addEventListener("click", () => {
+      if (!graphDataCache) {
+        logTo("graphLog", "暂无图谱数据可导出");
+        return;
+      }
+      const blob = new Blob([JSON.stringify(graphDataCache, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `graph_${state.selectedFileId || "data"}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById("exportCsvBtn").addEventListener("click", () => {
+      if (!graphDataCache) {
+        logTo("graphLog", "暂无图谱数据可导出");
+        return;
+      }
+      const nodes = graphDataCache.nodes || [];
+      const links = graphDataCache.links || [];
+
+      const nodeLines = ["id,name,type"];
+      nodes.forEach((node) => {
+        const row = [node.id, node.name || "", node.type || ""].map((val) => `"${String(val).replace(/"/g, '""')}"`);
+        nodeLines.push(row.join(","));
+      });
+
+      const edgeLines = ["source,target,relationship"];
+      links.forEach((edge) => {
+        const row = [edge.source, edge.target, edge.relationship || ""].map((val) => `"${String(val).replace(/"/g, '""')}"`);
+        edgeLines.push(row.join(","));
+      });
+
+      const csvContent = ["# nodes", ...nodeLines, "", "# edges", ...edgeLines].join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `graph_${state.selectedFileId || "data"}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById("snapshotBtn").addEventListener("click", () => {
+      const container = document.getElementById("graphCanvas");
+      const canvas = container ? container.querySelector("canvas") : null;
+      if (!canvas) {
+        logTo("graphLog", "当前无图谱画布");
+        return;
+      }
+      const url = canvas.toDataURL("image/png");
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `graph_${state.selectedFileId || "snapshot"}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    });
+
+    document.getElementById("askBtn").addEventListener("click", async () => {
+      const question = document.getElementById("questionInput").value.trim();
+      if (!question) {
+        logTo("qaLog", "请输入问题");
+        return;
+      }
+      try {
+        ensureSelectedFile();
+        const data = await api("/qa/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question, fileId: state.selectedFileId }),
+        });
+        document.getElementById("qaResult").value = data.answer || "";
+        logTo("qaLog", "问答完成");
+      } catch (err) {
+        logTo("qaLog", `问答失败: ${err.message}`);
+      }
+    });
+
+    document.getElementById("qaHistoryBtn").addEventListener("click", async () => {
+      try {
+        ensureSelectedFile();
+        const data = await api(`/qa/history/${state.selectedFileId}`);
+        document.getElementById("qaResult").value = JSON.stringify(data.history || [], null, 2);
+      } catch (err) {
+        logTo("qaLog", `加载历史失败: ${err.message}`);
+      }
+    });
+
+    document.getElementById("qaRelatedBtn").addEventListener("click", async () => {
+      const question = document.getElementById("questionInput").value.trim();
+      if (!question) {
+        logTo("qaLog", "请输入问题后再获取推荐");
+        return;
+      }
+      try {
+        ensureSelectedFile();
+        const data = await api("/qa/related", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question, fileId: state.selectedFileId }),
+        });
+        document.getElementById("qaResult").value = JSON.stringify(data.questions || [], null, 2);
+      } catch (err) {
+        logTo("qaLog", `推荐问题失败: ${err.message}`);
+      }
+    });
+
+    document.getElementById("qaHealthBtn").addEventListener("click", async () => {
+      try {
+        ensureSelectedFile();
+        const data = await api(`/qa/health?fileId=${state.selectedFileId}`);
+        document.getElementById("qaResult").value = JSON.stringify(data.health || {}, null, 2);
+      } catch (err) {
+        logTo("qaLog", `健康检查失败: ${err.message}`);
+      }
+    });
+
+    document.getElementById("nav").addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-page]");
+      if (!button) return;
+      const page = button.dataset.page;
+      document.querySelectorAll(".nav button").forEach((btn) => btn.classList.remove("active"));
+      button.classList.add("active");
+      document.querySelectorAll(".page").forEach((el) => el.classList.remove("active"));
+      document.getElementById(`page-${page}`).classList.add("active");
+      const titleMap = {
+        upload: "上传文件",
+        extract: "提取内容",
+        graph: "构建知识图谱",
+        qa: "知识问答",
+      };
+      document.getElementById("pageTitle").textContent = titleMap[page] || "知识图谱桌面系统";
+    });
+
+    const checkHealth = async () => {
+      try {
+        const data = await api("/health");
+        document.getElementById("healthText").textContent = data.status === "ok" ? "正常" : "异常";
+      } catch (err) {
+        document.getElementById("healthText").textContent = "异常";
+      }
+    };
+
+    checkHealth();
+    refreshFiles();
+    setStatus();
+  </script>
+</body>
+</html>

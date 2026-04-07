@@ -7,6 +7,13 @@ import pytesseract
 from docx import Document
 from PIL import Image
 
+
+def _configure_tesseract() -> None:
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    tesseract_path = os.path.join(project_root, "tools", "tesseract.exe")
+    if os.path.exists(tesseract_path):
+        pytesseract.pytesseract.tesseract_cmd = tesseract_path
+
 def parse_file(filepath: str) -> Dict[str, Any]:
     """解析不同格式文件，并统一返回结构。"""
     if not filepath or not os.path.exists(filepath):
@@ -166,6 +173,7 @@ def parse_image(filepath: str) -> Dict[str, Any]:
 def ocr_image(image_path: str) -> str:
     """OCR识别图片中的文字。"""
     try:
+        _configure_tesseract()
         image = Image.open(image_path)
         return pytesseract.image_to_string(image, lang='chi_sim')
     except Exception:
